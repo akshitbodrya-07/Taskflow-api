@@ -126,10 +126,14 @@ app.get("/projects/:id/tasks", authentication, async (req, res) => {
 app.post("/projects/:id/tasks", authentication, async (req, res) => {
     try {
         const projectId = Number(req.params.id);
-        const projectResult = await pool.query("SELECT * FROM projects WHERE id = $1",[projectId]);
+        const access = await checkProjectOwner (projectId, req.user!.userId);
 
-        if (projectResult.rows.length == 0) {
+        if(access === "not_found") {
             return res.status(404).json({error: "project not found"});
+        }
+
+        if(access === "forbidden") {
+            return res.status(403).json({error: "you do not own this project"});
         }
 
         const result = createTaskSchema.safeParse(req.body);
@@ -163,6 +167,12 @@ app.patch("/tasks/:id", authentication, async (req, res) => {
             return res.status(404).json({error: "task not found"});
         }
 
+        const access = await checkProjectOwner (existingTask.rows[0].project_id, req.user!.userId);
+
+        if(access === "forbidden") {
+            return res.status(403).json({error: "you do not own this project"});
+        }
+        
         const result = updateTaskSchema.safeParse(req.body);
 
         if(!result.success) {
@@ -209,6 +219,12 @@ app.delete("/tasks/:id", authentication, async (req, res) => {
 
         if(existingTask.rows.length == 0) {
             return res.status(404).json({error: "task not found"});
+        }
+
+        const access = await checkProjectOwner (existingTask.rows[0].project_id, req.user!.userId);
+
+        if(access === "forbidden") {
+            return res.status(403).json({error: "you do not own this project"});
         }
 
         const deletedTask = await pool.query("DELETE FROM tasks WHERE id = $1 RETURNING *",[taskID]);
