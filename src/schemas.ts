@@ -4,7 +4,6 @@ import { partial } from "zod/mini";
 export const createProjectSchema = z.object({
     name: z.string().trim().min(1, "name is required").max(100),
     description: z.string().max(500).optional(),
-    ownerId: z.number().int().positive(),
 });
 
 export const createTaskSchema = z.object({

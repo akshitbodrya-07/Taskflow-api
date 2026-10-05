@@ -46,6 +46,7 @@ const checkProjectOwner = async (projectId: number, userId: number) => {
     return "ok"
 };
 
+
 app.use(express.json()); // middleware: parse JSON request bodies
 
 app.get("/", (req, res) => {
@@ -98,11 +99,11 @@ app.post("/projects", authentication, async (req, res) => {
             return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
         }
 
-        const { name, description, ownerId } = parsed.data;
+        const { name, description } = parsed.data;
 
         const result = await pool.query(
             "INSERT INTO projects (name, description, owner_id) VALUES ($1, $2, $3) RETURNING *",
-            [name, description, ownerId]
+            [name, description, req.user!.userId]
         );
         res.status(201).json(result.rows[0]);
     } catch(err) {
@@ -222,11 +223,18 @@ app.delete("/tasks/:id", authentication, async (req, res) => {
 app.patch("/projects/:id", authentication, async (req, res) => {
     try {
         const projectID = Number(req.params.id);
-        const existingProject = await pool.query("SELECT * FROM projects WHERE id = $1",[projectID]);
+        
+        const access = await checkProjectOwner (projectID, req.user!.userId);
 
-        if(existingProject.rows.length == 0) {
+        if(access === "not_found") {
             return res.status(404).json({error: "project not found"});
         }
+
+        if(access === "forbidden") {
+            return res.status(403).json({error: "you do not own this project"});
+        }
+
+        const existingProject = await pool.query("SELECT * FROM projects WHERE id = $1", [projectID]);
 
         const result = updateProjectSchema.safeParse(req.body);
 
@@ -239,24 +247,22 @@ app.patch("/projects/:id", authentication, async (req, res) => {
         const updatedFields = {
             name: result.data.name ?? existing.name,
             description: result.data.description ?? existing.description,
-            ownerId: result.data.ownerId ?? existing.owner_id,
         };
 
         const updateResult = await pool.query(
             `UPDATE projects
-            SET name = $1, description = $2, owner_id = $3
-            WHERE id = $4
+            SET name = $1, description = $2
+            WHERE id = $3
             RETURNING *`,
             [
                 updatedFields.name,
                 updatedFields.description,
-                updatedFields.ownerId,
                 projectID,
             ]
         );
         res.status(200).json(updateResult.rows[0]);
     } catch(err) {
-        console.log(err);
+        console.error(err);
         res.status(500).json({ error: "Something went wrong" });
     }
 });
@@ -264,10 +270,15 @@ app.patch("/projects/:id", authentication, async (req, res) => {
 app.delete("/projects/:id", authentication, async (req, res) => {
     try {
         const projectID = Number(req.params.id);
-        const existingProject = await pool.query("SELECT * FROM projects Where id = $1", [projectID]);
 
-        if(existingProject.rows.length==0) {
+        const access = await checkProjectOwner (projectID, req.user!.userId);
+
+        if(access === "not_found") {
             return res.status(404).json({error: "project not found"});
+        }
+
+        if(access === "forbidden") {
+            return res.status(403).json({error: "you do not own this project"});
         }
 
         const deletedProject = await pool.query ("DELETE FROM projects WHERE id = $1 RETURNING *", [projectID]);
